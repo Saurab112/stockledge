@@ -19,7 +19,8 @@ StockLedger manages:
 - Warehouse stock (multi-warehouse, single company)
 - Purchasing/receiving
 - Sales
-- Purchase/sales returns 
+- Purchase returns 
+- Sale returns 
 - Stock transfers between warehouses
 - Stock adjustments
 - FIFO inventory costing
@@ -39,7 +40,7 @@ The goal is **correct and traceable inventory management**, not just CRUD.
 | Layering | API → Application → Domain ← Infrastructure |
 | Multi-tenancy | Out of scope |
 
-Functional areas within the monolith: Products, Categories, Warehouses, Purchasing, Sales, Stock Transfers, Stock Adjustments, Reporting.
+Functional areas within the monolith: Products, Categories, Warehouses, Purchasing, Sales, Purchase Returns, Sale Returns, Stock Transfers, Stock Adjustments, Reporting.
 
 ---
 
@@ -56,18 +57,12 @@ Functional areas within the monolith: Products, Categories, Warehouses, Purchasi
 ### 4.1 Product 
 
 
-### 4.2 Categories — ⚠️ Open
+### 4.2 Categories —  Open
 
 
-### 4.3 Product Variants — ⚠️ Open (next design topic)
+### 4.3 Product Variants —  Open (next design topic)
 
 Variants are supported (e.g. T-Shirt → Red/Small, Red/Medium). Not yet decided: fixed attribute columns vs. a dynamic attribute model. The stockable unit must remain unambiguous regardless of approach — this decision drives the core schema and blocks the ERD.
-
-### 4.4 Batch & Expiry Tracking 
-
-
-### 4.5 Serial Number Tracking — ❌ Out of scope (v1)
-Not implemented initially; may be added later if scope requires it.
 
 
 ## 5. Unit of Measure 
