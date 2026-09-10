@@ -1,86 +1,173 @@
 # StockLedger — Business Rules
 
-This document lists the business rules the system must enforce, independent of how they are implemented in code. Each rule is stated as a plain requirement. Rules that are still under discussion are marked as open at the end of their section.
+This document defines the business rules that the system must enforce, independent of how those rules are implemented in code.
 
-## Company and Warehouse
+Rules that have not yet been finalized are explicitly marked as **Open** or **Proposed**.
+
+---
+
+## 1. Company and Warehouse
 
 1. The system supports a single company.
 2. A company can have multiple warehouses.
-3. Stock quantities are tracked separately per warehouse. Stock in one warehouse has no effect on stock in another warehouse.
-4. Warehouse is the smallest location unit tracked. Bin or shelf level tracking is not supported.
+3. Stock quantities are tracked separately for each warehouse.
+4. Stock in one warehouse does not affect the available stock of another warehouse.
+5. Warehouse is the smallest location unit tracked by the system.
+6. Bin-level or shelf-level stock tracking is not supported.
 
-## Products
+---
 
-1. Every product must have a name, a code or SKU, a category, a base unit of measure, and an active or inactive status.
-2. A product can have one or more variants (for example, different colors or sizes). Each variant is tracked as its own stockable unit.
-3. Whether product variants use fixed attributes or a dynamic attribute model is not yet decided.
-4. Whether product categories are flat or hierarchical is not yet decided.
+## 2. Products
 
-## Units of Measure
+1. Every product must have:
 
-1. A product has a base unit of measure. All stock quantities are ultimately expressed in this base unit.
-2. Transactions may be recorded in a different unit of measure than the base unit, using a conversion factor (for example, 1 box equals 12 pieces).
-3. The conversion factor used in a transaction is fixed at the time the transaction occurs. Changing a product's unit of measure or conversion factor later does not change the value already recorded on past transactions.
-4. Whether a base unit of measure or conversion factor can be changed after transactions already exist is not yet decided.
+   * a name,
+   * a code or SKU,
+   * a category,
+   * a base unit of measure,
+   * an active or inactive status.
+2. A product may have one or more variants.
+3. Each variant represents a separately stockable item.
+4. Stock is tracked at the product-variant level when variants are used.
+5. **Open:** Whether product variants use a fixed set of attributes or a dynamic attribute model is not yet decided.
+6. **Open:** Whether product categories are flat or hierarchical is not yet decided.
 
-## Inventory Tracking
+---
 
-1. Every change to stock is recorded as an entry in an inventory ledger. The ledger is the source of truth for inventory history.
-2. The ledger is append only. Existing ledger entries are never modified or deleted.
-3. A separate stock balance is kept for each warehouse and product variant as a cached total. This balance is derived from the ledger and can be recalculated from it at any time.
-4. Any operation that changes stock must update the ledger and the stock balance together, as a single unit of work. Partial updates are not allowed.
-5. If the stock balance and the ledger ever disagree, the ledger is treated as correct.
+## 3. Units of Measure
 
-## Negative Stock
+1. Every product has a base unit of measure.
+2. Stock quantities are ultimately maintained in the product's base unit.
+3. Transactions may be entered using a different unit of measure.
+4. A conversion factor is used when a transaction unit differs from the base unit.
+5. Example: 1 box may represent 12 pieces.
+6. The conversion factor used for a transaction is recorded with that transaction.
+7. Changing a product's unit configuration later must not change the quantity or value already recorded by historical transactions.
+8. **Open:** Whether the base unit of measure can be changed after transactions exist is not yet decided.
+9. **Open:** Whether existing conversion factors can be modified after transactions exist is not yet decided.
 
-1. Stock quantity for a product variant in a warehouse can never go below zero.
-2. An operation that would cause stock to go below zero must be rejected in full. It is not allowed to partially apply the operation.
-3. This rule must hold even when two or more operations affecting the same stock happen at the same time. The exact mechanism for enforcing this under concurrent access is not yet decided.
+---
 
-## Purchasing
+## 4. Inventory Tracking
 
-1. Receiving stock from a supplier increases the stock balance in the receiving warehouse.
-2. A purchase does not require approval before it takes effect.
-3. Receiving stock creates a new inventory ledger entry, which also serves as a cost layer for FIFO costing.
+1. Every stock-changing operation must create an inventory ledger entry.
+2. The inventory ledger is append-only.
+3. Existing ledger entries must not be modified or deleted.
+4. Historical corrections must be represented through new stock movements rather than modifying historical ledger entries.
+5. A separate stock balance is maintained for each warehouse and stockable product variant.
+6. The stock balance represents the current quantity derived from inventory movements.
+7. The stock balance can be recalculated from the inventory ledger.
+8. A stock-changing operation must update the inventory ledger and stock balance as a single atomic unit of work.
+9. A stock-changing operation must not leave the ledger and stock balance partially updated.
+10. If the stock balance and ledger disagree, the ledger is treated as the authoritative record and the balance must be reconciled.
 
-## Sales
+---
 
-1. Selling stock decreases the stock balance in the warehouse the sale is made from.
+## 5. Negative Stock
+
+1. Available stock for a product variant in a warehouse must never become negative.
+2. An operation that would result in negative stock must be rejected in full.
+3. The system must not partially apply a stock-changing operation simply because only part of the requested quantity is available.
+4. The negative-stock rule must remain valid when multiple operations affecting the same stock occur concurrently.
+5. **Open:** The exact concurrency-control mechanism used to enforce this rule under concurrent access is not yet decided.
+
+---
+
+## 6. Purchasing
+
+1. Receiving stock from a supplier increases the available stock in the receiving warehouse.
+2. A purchase does not require approval before received stock becomes available.
+3. Receiving stock creates an inventory movement.
+4. Costed incoming inventory must retain its quantity and unit cost for FIFO costing.
+5. **Open:** The exact cost-layer behavior for purchase returns, free items, discounts, taxes, and other purchasing adjustments is not yet decided.
+
+---
+
+## 7. Sales
+
+1. Selling stock decreases the available stock in the warehouse from which the sale is fulfilled.
 2. A sale does not require approval before it takes effect.
-3. A sale cannot be completed if it would cause stock to go below zero.
+3. A sale cannot be completed if the requested quantity would cause available stock to become negative.
+4. The cost of sold inventory is determined using the FIFO layers consumed by the sale.
+5. A single sale may consume stock from multiple FIFO cost layers.
 
-## Inventory Costing
+---
 
-1. Inventory cost is calculated using first in, first out (FIFO).
-2. When stock is sold or otherwise removed, the oldest available cost layer is consumed first.
-3. Cost of goods sold and remaining inventory value are both derived from which cost layers have been consumed.
+## 8. Inventory Costing
 
-## Stock Transfers
+1. Inventory is costed using the FIFO (First In, First Out) method.
+2. Costed incoming inventory creates a FIFO cost layer.
+3. Each cost layer tracks the quantity and unit cost of the inventory it represents.
+4. When inventory is removed, the oldest available cost layer is consumed first.
+5. If a stock removal exceeds the remaining quantity of one cost layer, subsequent layers are consumed until the requested quantity is fulfilled.
+6. A partially consumed cost layer retains its remaining quantity for future stock removals.
+7. A fully consumed cost layer cannot be used for future stock removals.
+8. Cost of goods sold is calculated from the cost layers consumed by the stock removal.
+9. Remaining inventory value is calculated from the remaining quantities and costs of available FIFO layers.
+10. **Open:** The exact FIFO cost behavior for transfers, positive adjustments, purchase returns, sales returns, and opening stock is not yet finalized.
 
-1. Moving stock between warehouses requires approval before it takes effect.
-2. A transfer does not move stock directly from the source warehouse to the destination warehouse in one step. Stock is first removed from the source warehouse and placed into an in-transit state, and only added to the destination warehouse once it is marked as received.
-3. The expected transfer states are: draft, submitted, approved, dispatched, in transit, received. Cancellation and rejection states are not yet finalized.
+---
 
-## Stock Adjustments
+## 9. Stock Transfers
 
-1. A stock adjustment is used when the physical count of inventory differs from the recorded stock balance.
-2. Whether a stock adjustment requires approval is proposed but not yet confirmed.
-3. The proposed adjustment states are: draft, submitted, approved, applied.
+1. A stock transfer moves inventory from one warehouse to another.
+2. A stock transfer requires approval before it can be dispatched.
+3. Stock must not be added to the destination warehouse when the transfer is merely created or approved.
+4. When a transfer is dispatched, the transferred quantity is removed from the source warehouse and placed in an in-transit state.
+5. Inventory in transit is not available as stock at either the source or destination warehouse.
+6. When the destination confirms receipt, the received quantity is added to the destination warehouse.
+7. The system must retain the relationship between the source movement, in-transit movement, and destination movement.
+8. **Open:** The exact transfer status workflow is not yet finalized.
+9. **Open:** Whether partial receiving is supported and how differences between dispatched and received quantities are handled is not yet decided.
+10. **Open:** The FIFO cost-layer behavior when inventory is transferred between warehouses is not yet decided.
+11. **Open:** The rules for cancelling or rejecting a transfer at different stages are not yet finalized.
 
-## Returns
+---
 
-1. Purchase returns and sales returns are in scope for this system.
-2. The detailed rules for how a return affects stock balance, ledger entries, and FIFO cost layers are not yet decided.
+## 10. Stock Adjustments
 
-## Approvals
+1. A stock adjustment is used when the physically counted inventory differs from the recorded stock quantity.
+2. An adjustment may increase or decrease the recorded stock quantity.
+3. An adjustment must create an inventory movement rather than directly modifying the historical stock ledger.
+4. An adjustment that decreases stock must not cause available stock to become negative.
+5. **Proposed:** Stock adjustments require approval before they are applied.
+6. **Open:** The exact adjustment workflow and status transitions are not yet finalized.
+7. **Open:** The costing treatment for positive and negative adjustments is not yet decided.
 
-1. Approval is required only for operations considered sensitive to the business. Not every operation requires approval.
-2. Purchases and sales do not require approval. Stock transfers require approval. Stock adjustments are proposed to require approval.
-3. Who is allowed to approve an operation is not yet decided.
+---
 
-## Explicitly Not Supported in This Version
+## 11. Returns
 
-1. Multiple companies or tenants are not supported.
-2. Individual serial number tracking is not supported.
-3. Stock reservations are not supported.
-4. Approval is not required for every operation by default.
+1. Purchase returns are in scope.
+2. Sales returns are in scope.
+3. A return must be represented as an inventory movement.
+4. A return must not modify the original inventory ledger entry.
+5. **Open:** The effect of purchase returns on stock and FIFO cost layers is not yet decided.
+6. **Open:** The effect of sales returns on stock and FIFO cost layers is not yet decided.
+7. **Open:** Whether returns require approval is not yet decided.
+
+---
+
+## 12. Approvals
+
+1. Approval is required only for operations explicitly defined as requiring approval.
+2. Purchases do not require approval.
+3. Sales do not require approval.
+4. Stock transfers require approval before dispatch.
+5. **Proposed:** Stock adjustments require approval before being applied.
+6. **Open:** The roles or users authorized to approve operations are not yet decided.
+7. **Open:** The exact approval workflow, including rejection and resubmission behavior, is not yet finalized.
+
+---
+
+## 13. Explicitly Not Supported in This Version
+
+The following capabilities are outside the scope of the current version:
+
+1. Multiple companies or multi-tenancy.
+2. Serial-number-level inventory tracking.
+3. Stock reservations.
+4. Bin-level or shelf-level inventory tracking.
+5. Automatic approval requirements for every stock-changing operation.
+
+These capabilities may be considered in a future version but are not requirements of the current system.
