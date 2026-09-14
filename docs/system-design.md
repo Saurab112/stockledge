@@ -18,6 +18,22 @@ What modules/components/systems does it interact with?
 Transactions, concurrency, security, performance,
 or other important considerations.
 
+### Features List
+## Feature: Product Category, Product and Product Variant
+## Feature: Unit of Measure Group and Unit of Measure
+## Feature: Vendor Group and Vendor
+## Feature: Warehouse
+## Feature: Purchase
+## Feature: Stock Ledger
+## Feature: Stock Balance
+## Feature: Sale
+
+### Remaining features to be added:
+## Feature: Purchase Return
+## Feature: Sale Return
+## Feature: Stock Adjustment
+## Feature: Stock Transfer
+## Feature: Customer (we can include for the Sale feature)
 
 ## Feature: Product Category, Product and Product Variant
 
@@ -30,37 +46,31 @@ For example:
 * Product Category: Cold Drinks
 * Products: Coca-Cola, Mountain Dew, Fanta
 
-A Product represents the common definition of an item, while a Product Variant represents the actual stockable and sellable item.
+A Product represents the common definition of an item, while a Product Variant represents a specific form of that product that can be stocked and sold.
 
-For example, Coca-Cola can have different variants based on size or other characteristics.
+For example, Coca-Cola can have variants based on size or other characteristics.
 
 ### Why
 
-Allows the system to organize products and represent the actual items that are stocked, purchased, transferred, and sold.
+Allows the system to organize products and define the specific variants that can be stocked, purchased, transferred, and sold.
 
 ### How
 
-Products are organized under categories, while product variants represent the specific stockable items.
+Products are organized under categories, while product variants represent
+the specific stockable items.
 
-Each product variant has its own SKU and unit of measure for inventory tracking.
+Each product variant has its own SKU and is assigned a UOM Group.
+The UOM Group determines the units of measure that can be used for the
+variant.
+
+Inventory stock is identified by the combination of product variant,
+warehouse, and unit of measure.
 
 ### Dependencies
 
-* Warehouse
+* Unit of Measure Group
 * Unit of Measure
 
-### Flow
-
-1. Create a product category.
-2. Create a product under the category.
-3. Create one or more product variants.
-4. Assign the required unit of measure to each variant. (it needs more discussion on how to handle unit of measure for product variants)
-5. Use the product variant for stock transactions.
-
-### Design Considerations
-
-* Each product variant must have a unique SKU.
-* Stock is maintained against the product variant rather than the product.
 
 
 ## Feature: Unit of Measure Group and Unit of Measure
@@ -79,11 +89,11 @@ A Unit of Measure represents an individual measurement unit within a UOM group.
 
 ### Why
 
-Allows stockable product variants to be measured and managed using different units while maintaining a consistent base unit for stock calculations.
+Allows product variants to be stocked and transacted using different units of measure while providing a defined relationship between those units.
 
 ### How
 
-A UOM group contains multiple units of measure with a multiplier that defines their conversion to the base UOM.
+A UOM group contains multiple units of measure. Each UOM has a multiplier that defines its relationship to the base UOM.
 
 For example:
 
@@ -92,7 +102,7 @@ For example:
 
 This means `1 Kilogram = 1000 Grams`.
 
-The system uses the base UOM as the common unit for stock calculations and conversions.
+A product variant is assigned a UOM group, allowing its inventory transactions to use the UOMs defined within that group.
 
 ### Dependencies
 
@@ -104,8 +114,8 @@ The system uses the base UOM as the common unit for stock calculations and conve
 2. Define the base UOM for the group.
 3. Add other UOMs to the group.
 4. Define the multiplier for each UOM relative to the base UOM.
-5. Assign a UOM from the appropriate group to a product variant. (it needs more discussion on how to handle unit of measure for product variants)
-6. Use the UOM and multiplier when performing stock-related transactions.
+5. Assign the UOM group to a product variant.
+6. Use a valid UOM from the assigned group when performing stock-related transactions.
 
 ### Design Considerations
 
@@ -113,6 +123,8 @@ The system uses the base UOM as the common unit for stock calculations and conve
 * The base UOM must have a multiplier of `1`.
 * Other UOMs must define their conversion relative to the base UOM.
 * UOMs from different groups should not be convertible.
+* Stock is maintained per product variant, warehouse, and UOM.
+
 
 
 ## Feature: Vendor Group and Vendor
@@ -170,9 +182,9 @@ Allows the system to maintain and track stock separately across different wareho
 
 ### How
 
-Stock is maintained per product variant and warehouse.
+The system maintains stock separately for each product variant, warehouse, and unit of measure.
 
-The combination of a product variant and warehouse identifies the stock held at a particular warehouse.
+The combination of product variant, warehouse, and unit of measure identifies a specific stock balance.
 
 ### Dependencies
 
@@ -182,11 +194,203 @@ The combination of a product variant and warehouse identifies the stock held at 
 ### Flow
 
 1. Create a warehouse.
-2. Assign stock to a warehouse through inventory transactions.
-3. Track stock separately for each product variant in each warehouse.
-4. Use the warehouse when performing stock-related transactions.
+2. Use the warehouse when performing stock-related transactions.
+3. Track stock separately for each product variant and unit of measure within the warehouse.
 
 ### Design Considerations
 
 * A product variant can have stock in multiple warehouses.
-* Stock quantity is maintained separately for each warehouse.
+* A product variant can have separate stock balances for different units of measure within the same warehouse.
+* Stock is identified by the combination of product variant, warehouse, and unit of measure.
+
+
+## Feature: Purchase
+
+### What
+
+A Purchase represents a transaction where the business purchases stock from a vendor for a specific warehouse.
+
+A purchase contains one or more purchase items, with each item specifying the product variant, UOM, quantity, and purchase cost.
+
+### Why
+
+Allows the system to record what was purchased, from which vendor, and for which warehouse, while increasing the available inventory.
+
+### How
+
+A purchase is created with its purchase items and associated with a vendor and warehouse.
+
+When the purchase is confirmed, each purchase item creates an inbound Stock Ledger entry and updates the corresponding Stock Balance.
+
+The received stock also becomes a FIFO inventory layer using the purchase cost.
+
+### Dependencies
+
+* Vendor
+* Product Variant
+* Unit of Measure
+* Warehouse
+* Stock Ledger
+* Stock Balance
+
+### Flow
+
+1. Create a purchase with vendor and warehouse.
+2. Add one or more purchase items.
+3. Select the product variant and UOM for each item.
+4. Enter the quantity and purchase cost.
+5. Validate the purchase.
+6. Confirm the purchase.
+7. Create inbound Stock Ledger entries.
+8. Create or update the corresponding Stock Balance.
+9. Add the received quantity as a FIFO layer.
+
+### Design Considerations
+
+* Purchase does not directly modify stock; inventory changes are recorded through the Stock Ledger.
+* Purchase confirmation and inventory updates should happen atomically.
+* The purchase UOM is the UOM used for the corresponding stock balance.
+* The purchase cost is used for FIFO costing.
+* A purchase does not require an approval workflow.
+* Vendor payment, payable, balance, and statement management are outside the current scope.
+
+## Feature: Stock Ledger
+
+### What
+
+Stock Ledger records the history of all inventory movements.
+
+Each stock-changing operation creates a ledger entry representing the quantity, UOM, warehouse, movement type, cost, and reference to the originating transaction.
+
+### Why
+
+Provides a reliable and traceable history of inventory movements and acts as the authoritative source for inventory history.
+
+### How
+
+Stock Ledger entries are created when inventory changes through operations such as purchases, sales, adjustments, and transfers.
+
+Each entry records the original transaction facts, including the transaction quantity and its equivalent base quantity.
+
+For inbound FIFO layers, `RemainingBaseQuantity` tracks the quantity that is still available for consumption.
+
+### Dependencies
+
+* Product Variant
+* Warehouse
+* Unit of Measure
+* Purchase
+* Sale
+* Stock Adjustment
+* Stock Transfer
+
+### Flow
+
+1. An inventory transaction is confirmed.
+2. The system validates the stock operation.
+3. A Stock Ledger entry is created.
+4. The transaction quantity and base quantity are recorded.
+5. For inbound stock, the remaining base quantity is initialized for FIFO tracking.
+6. The corresponding Stock Balance is created or updated.
+
+### Design Considerations
+
+* Ledger transaction facts are immutable.
+* `Quantity` and `BaseQuantity` preserve the original transaction values.
+* `RemainingBaseQuantity` is mutable inventory-layer state used for FIFO consumption.
+* Corrections to historical movements are made through compensating movements rather than modifying existing entries.
+* Each ledger entry references its originating business transaction.
+
+## Feature: Stock Balance
+
+### What
+
+Stock Balance represents the current available inventory for a product variant at a warehouse using a specific unit of measure.
+
+The stock identity is:
+
+`Product Variant + Warehouse + Unit of Measure`
+
+### Why
+
+Provides fast access to the current stock quantity without calculating the entire inventory history from the Stock Ledger for every stock query.
+
+### How
+
+Stock Balance is created or updated when a stock-changing transaction creates a Stock Ledger entry.
+
+The balance is maintained separately for each product variant, warehouse, and UOM.
+
+### Dependencies
+
+* Product Variant
+* Warehouse
+* Unit of Measure
+* Stock Ledger
+
+### Flow
+
+1. An inventory transaction creates a Stock Ledger entry.
+2. The system identifies the corresponding Product Variant, Warehouse, and UOM.
+3. The existing Stock Balance is created or updated.
+4. The balance reflects the current available quantity.
+5. Stock Balance and Stock Ledger changes are committed atomically.
+
+### Design Considerations
+
+* Stock Balance is a derived current-state representation, not the historical source of truth.
+* A unique balance exists for each Product Variant + Warehouse + UOM combination.
+* Negative stock is not allowed.
+* Stock Balance should be reconcilable against the Stock Ledger.
+
+
+## Feature: Sale
+
+### What
+
+A Sale represents a transaction where the business sells stock from a specific warehouse.
+
+A sale contains one or more sale items, with each item specifying the product variant, UOM, quantity, and selling price.
+
+### Why
+
+Allows the system to record stock sold from a warehouse and reduce the corresponding available inventory while maintaining a traceable inventory history.
+
+### How
+
+A sale is created with its sale items and associated with a warehouse.
+
+When the sale is confirmed, each sale item is validated against the available Stock Balance for the specified product variant, warehouse, and UOM.
+
+The system consumes the required quantity using FIFO costing, creates an outbound Stock Ledger entry, and updates the corresponding Stock Balance.
+
+### Dependencies
+
+* Product Variant
+* Unit of Measure
+* Warehouse
+* Stock Ledger
+* Stock Balance
+
+### Flow
+
+1. Create a sale with a warehouse.
+2. Add one or more sale items.
+3. Select the product variant and UOM for each item.
+4. Enter the quantity and selling price.
+5. Validate the sale and available stock.
+6. Confirm the sale.
+7. Determine the applicable FIFO inventory layers.
+8. Create an outbound Stock Ledger entry.
+9. Reduce the corresponding Stock Balance.
+10. Update the remaining quantity of the consumed FIFO layers.
+
+### Design Considerations
+
+* Sale confirmation and inventory updates should happen atomically.
+* Stock availability is checked for the exact Product Variant + Warehouse + UOM combination.
+* Stock from another UOM is not automatically converted or consumed when the requested UOM has insufficient stock.
+* FIFO consumes the oldest available inventory layers first.
+* Negative stock is not allowed.
+* The original Stock Ledger entries remain immutable; FIFO consumption updates only `RemainingBaseQuantity`.
+* Selling price is independent of the inventory cost used for FIFO costing.
