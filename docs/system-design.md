@@ -30,14 +30,12 @@ or other important considerations.
 ## Feature: Purchase Return
 ## Feature: Sale Return
 ## Feature: Stock Ledger Allocation
+## Feature: Stock Transfer
+## Feature: Stock Adjustment
 
 ### Remaining features to be added:
 
-## Feature: Stock Adjustment
-## Feature: Stock Transfer
 ## Feature: Customer (we can include for the Sale feature)
-
-
 
 ## Feature: Product Category, Product and Product Variant
 
@@ -646,3 +644,115 @@ Once the transfer is approved, the reserved quantity is converted into the actua
 * Source and destination inventory changes are performed atomically.
 * Stock availability and reservation must be handled atomically to prevent over-reservation.
 * A transfer cannot move stock between different UOM groups.
+
+
+## Feature: Stock Adjustment
+
+### What
+
+A Stock Adjustment represents a correction to inventory when the physical stock differs from the quantity recorded by the system.
+
+A stock adjustment contains one or more adjustment items, with each item specifying the product variant, UOM, quantity, direction, reason, and applicable unit cost.
+
+Stock adjustments can either be applied immediately or require approval based on the system's Stock Adjustment Approval setting.
+
+### Why
+
+Allows inventory quantities to be corrected for situations that cannot be represented through normal business transactions such as purchases, sales, transfers, or returns.
+
+Common adjustment reasons include:
+
+* Physical Count Difference
+* Damaged Stock
+* Lost Stock
+* Expired Stock
+* Found Stock
+* Opening Stock
+* Other Inventory Correction
+
+The adjustment process maintains UOM-specific inventory, FIFO costing, Stock Balance accuracy, and a complete inventory history.
+
+### How
+
+A stock adjustment identifies the warehouse where the inventory correction will occur.
+
+Each adjustment item specifies the product variant, UOM, quantity, direction, reason, and applicable cost.
+
+For a **positive adjustment**, the specified unit cost is used to create a new FIFO inventory layer.
+
+For a **negative adjustment**, the system consumes existing inventory using FIFO and determines the cost from the consumed inventory layers.
+
+The system checks the Stock Adjustment Approval setting to determine whether the adjustment is applied immediately or requires approval.
+
+When approval is required, the adjustment remains `Pending` and does not affect inventory until it is approved.
+
+### Dependencies
+
+* Product Variant
+* Unit of Measure
+* Warehouse
+* Stock Ledger
+* Stock Ledger Allocation
+* Stock Balance
+* FIFO Costing
+* Approval
+* System Settings
+
+### Flow
+
+#### Direct Adjustment
+
+When Stock Adjustment Approval is disabled:
+
+1. Create a stock adjustment with one or more adjustment items.
+2. Validate the warehouse, product variants, UOMs, quantities, and applicable costs.
+3. Validate available stock for negative adjustments.
+4. Create the required Stock Ledger entries.
+5. Create FIFO allocations for negative adjustments.
+6. Create new FIFO layers for positive adjustments.
+7. Update the affected Stock Balances.
+8. Mark the adjustment as `Confirmed`.
+
+All inventory changes are performed within the same transaction.
+
+#### Approval Required
+
+When Stock Adjustment Approval is enabled:
+
+1. Create a stock adjustment with one or more adjustment items.
+2. Validate the warehouse, product variants, UOMs, quantities, and applicable costs.
+3. Create the adjustment with `Pending` status.
+4. Do not create Stock Ledger movements.
+5. Do not modify Stock Balance.
+6. Submit the adjustment for approval.
+7. If rejected, mark the adjustment as `Rejected`.
+8. If approved, revalidate the adjustment.
+9. Apply the inventory changes.
+10. Create the required Stock Ledger entries.
+11. Create FIFO allocations for negative adjustments.
+12. Create new FIFO layers for positive adjustments.
+13. Update the affected Stock Balances.
+14. Mark the adjustment as `Confirmed`.
+
+Approval, inventory changes, FIFO processing, Stock Ledger creation, and Stock Balance updates are performed atomically when the adjustment is approved.
+
+### Design Considerations
+
+* Stock Adjustment is a business document separate from Stock Ledger.
+* Stock Adjustment approval is controlled by a system setting.
+* A pending adjustment does not create Stock Ledger movements, modify Stock Balance, or reserve stock.
+* `Confirmed` means the adjustment has been applied to inventory.
+* `Rejected` means the adjustment does not affect inventory.
+* Positive adjustments require a Unit Cost and create new inbound FIFO layers.
+* Negative adjustments consume existing inventory layers using FIFO.
+* Negative adjustments create `StockLedgerAllocation` records linking the adjustment to the consumed inbound layers.
+* Negative adjustments can consume only available stock.
+* Available stock is calculated as `Quantity - ReservedQuantity`.
+* Stock is maintained separately for each `ProductVariant + Warehouse + UOM` combination.
+* The adjustment UOM must belong to the Product Variant's assigned UOM Group.
+* The system does not automatically consume stock from another UOM when the requested UOM is insufficient.
+* Opening stock can be recorded as a positive adjustment using the `OpeningStock` reason.
+* Original Stock Ledger transaction facts remain immutable after confirmation.
+* Corrections to a confirmed adjustment are represented by a new inventory transaction rather than modifying the original transaction.
+* Direct and approved adjustments use the same inventory-processing logic; only the workflow before execution differs.
+* Inventory validation and updates must be performed atomically to prevent concurrent operations from causing negative or inconsistent stock.
