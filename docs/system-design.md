@@ -26,11 +26,13 @@ or other important considerations.
 ## Feature: Purchase
 ## Feature: Stock Ledger
 ## Feature: Stock Balance
-## Feature: Sale
-
-### Remaining features to be added:
+## Feature: Sale (need to more research on this)
 ## Feature: Purchase Return
 ## Feature: Sale Return
+## Feature: Stock Ledger Allocation
+
+### Remaining features to be added:
+
 ## Feature: Stock Adjustment
 ## Feature: Stock Transfer
 ## Feature: Customer (we can include for the Sale feature)
@@ -394,3 +396,174 @@ The system consumes the required quantity using FIFO costing, creates an outboun
 * Negative stock is not allowed.
 * The original Stock Ledger entries remain immutable; FIFO consumption updates only `RemainingBaseQuantity`.
 * Selling price is independent of the inventory cost used for FIFO costing.
+
+
+## Feature: Purchase Return
+
+### What
+
+A Purchase Return represents a transaction where previously purchased stock is returned to the vendor from a specific warehouse.
+
+A purchase return contains one or more return items referencing the original purchase items and the inventory layers from which the stock is returned.
+
+### Why
+
+Allows the business to reverse received stock that needs to be returned to the vendor while maintaining traceability to the original purchase and inventory movement.
+
+### How
+
+A purchase return is created against a completed purchase and records the vendor, warehouse, and items being returned.
+
+When the return is confirmed, the system validates that the requested quantity is available in the referenced inbound FIFO layer.
+
+The system reduces the layer's `RemainingBaseQuantity`, creates an outbound Stock Ledger entry, and updates the corresponding Stock Balance.
+
+### Dependencies
+
+* Purchase
+* Purchase Item
+* Product Variant
+* Unit of Measure
+* Warehouse
+* Stock Ledger
+* Stock Balance
+
+### Flow
+
+1. Select the original purchase.
+2. Create a purchase return for the warehouse where the stock is held.
+3. Select the purchase items and inventory layers being returned.
+4. Enter the return quantity.
+5. Validate the available quantity in the referenced FIFO layer.
+6. Confirm the purchase return.
+7. Reduce the affected FIFO layer's `RemainingBaseQuantity`.
+8. Create an outbound Stock Ledger entry.
+9. Update the corresponding Stock Balance.
+
+### Design Considerations
+
+* A purchase return must reference the original purchase item.
+* The return references the specific inbound Stock Ledger layer from which stock is returned.
+* The original Stock Ledger transaction facts remain immutable.
+* `RemainingBaseQuantity` is reduced as part of the return.
+* Purchase return cost uses the cost of the referenced inventory layer.
+* Return processing and inventory changes are atomic.
+
+
+## Feature: Sales Return
+
+### What
+
+A Sales Return represents a transaction where previously sold stock is returned by a customer to a specific warehouse.
+
+A sales return contains one or more return items referencing the original sale items.
+
+### Why
+
+Allows the business to receive previously sold stock back into inventory while maintaining traceability to the original sale and restoring the inventory consumed by that sale.
+
+### How
+
+A sales return is created against a completed sale and records the warehouse receiving the returned stock.
+
+When the return is confirmed, the system identifies the original sale's Stock Ledger movement and its FIFO allocations.
+
+The returned quantity is restored against the original FIFO allocations in reverse allocation order. The system then creates an inbound Stock Ledger entry and updates the corresponding Stock Balance.
+
+### Dependencies
+
+* Sale
+* Sale Item
+* Product Variant
+* Unit of Measure
+* Warehouse
+* Stock Ledger
+* Stock Ledger Allocation
+* Stock Balance
+
+### Flow
+
+1. Select the original sale.
+2. Create a sales return for the receiving warehouse.
+3. Select the sale items being returned.
+4. Enter the return quantity.
+5. Identify the original sale's FIFO allocations.
+6. Restore the returned quantity against the allocations in reverse order.
+7. Create an inbound Stock Ledger entry.
+8. Update the corresponding Stock Balance.
+9. Confirm the sales return.
+
+### Design Considerations
+
+* A sales return must reference the original sale item.
+* FIFO restoration is based on the original sale's `StockLedgerAllocation` records.
+* Returned quantity is restored against allocations in reverse order.
+* The original Sale Stock Ledger entry remains immutable.
+* `RemainingBaseQuantity` is increased on the affected inbound layers.
+* The system does not track individual physical units, serial numbers, or batches.
+* Sales return processing and inventory changes are atomic.
+
+## Feature: Stock Ledger Allocation
+
+### What
+
+Stock Ledger Allocation records which inbound inventory layers were consumed by an outbound Stock Ledger movement.
+
+A single outbound movement may consume stock from multiple FIFO layers, so the allocation records establish the relationship between the outbound movement and the inbound layers it consumed.
+
+### Why
+
+Allows the system to maintain a traceable relationship between stock consumption and the original inventory layers used to fulfill it.
+
+This relationship is required for FIFO costing and for restoring the correct inventory layers when a sale is returned.
+
+### How
+
+When an outbound inventory transaction is confirmed, the system identifies the eligible inbound FIFO layers and consumes them in FIFO order.
+
+For each consumed layer, a `StockLedgerAllocation` record is created containing the outbound ledger entry, inbound ledger entry, consumed base quantity, and applicable unit cost.
+
+For example:
+
+```text
+Sale Ledger #201
+       │
+       ├── Allocation → Inbound #101
+       │                 10 Box @ 1,000
+       │
+       └── Allocation → Inbound #102
+                         5 Box @ 1,200
+```
+
+The allocation records represent how the outbound movement was fulfilled without modifying the historical transaction facts of either ledger entry.
+
+### Dependencies
+
+* Stock Ledger
+* Product Variant
+* Unit of Measure
+* FIFO Costing
+* Sales Return
+
+### Flow
+
+1. An outbound inventory transaction is confirmed.
+2. Identify available inbound FIFO layers for the required stock.
+3. Select layers in FIFO order.
+4. Determine the quantity consumed from each layer.
+5. Create a `StockLedgerAllocation` for each consumed layer.
+6. Reduce the corresponding inbound layer's `RemainingBaseQuantity`.
+7. Complete the outbound Stock Ledger movement.
+8. When a Sales Return occurs, use the allocations to identify the original FIFO layers.
+9. Restore the returned quantity against those allocations in reverse order.
+
+### Design Considerations
+
+* One outbound Stock Ledger entry can have multiple allocation records.
+* Each allocation references one inbound Stock Ledger layer.
+* `BaseQuantity` represents the quantity allocated from the inbound layer in base-UOM terms.
+* `UnitCost` preserves the cost applied from the corresponding inbound layer.
+* Allocation records are historical relationships and should not be modified to change past FIFO consumption.
+* Sales Return uses the original allocations to restore inventory layers rather than creating an unrelated FIFO relationship.
+* FIFO allocation is performed only among compatible stock identified by the required Product Variant, Warehouse, and UOM rules.
+* The allocation process and related Stock Ledger/Stock Balance changes are performed atomically.
