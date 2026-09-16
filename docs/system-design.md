@@ -37,6 +37,8 @@ or other important considerations.
 ## Feature: Stock Transfer
 ## Feature: Customer (we can include for the Sale feature)
 
+
+
 ## Feature: Product Category, Product and Product Variant
 
 ### What
@@ -567,3 +569,80 @@ The allocation records represent how the outbound movement was fulfilled without
 * Sales Return uses the original allocations to restore inventory layers rather than creating an unrelated FIFO relationship.
 * FIFO allocation is performed only among compatible stock identified by the required Product Variant, Warehouse, and UOM rules.
 * The allocation process and related Stock Ledger/Stock Balance changes are performed atomically.
+
+
+
+## Feature: Stock Transfer
+
+### What
+
+A Stock Transfer represents the movement of inventory from one warehouse to another within the company.
+
+A transfer contains one or more transfer items, with each item specifying the product variant, UOM, and quantity to be transferred.
+
+Transfers can either be executed immediately or require approval before the inventory is moved.
+
+### Why
+
+Allows inventory to be moved between warehouses while maintaining accurate stock quantities, FIFO costing, reservation of pending stock, and traceability of the transfer.
+
+### How
+
+A transfer identifies a source warehouse and a destination warehouse.
+
+When approval is not required, the transfer is executed immediately by creating `TransferOut` and `TransferIn` Stock Ledger movements.
+
+When approval is required, the requested stock is first reserved in the source warehouse. The reserved quantity remains physically in the source warehouse but is unavailable for other stock-consuming transactions.
+
+Once the transfer is approved, the reserved quantity is converted into the actual stock movement. The reservation is released as part of the same atomic transaction in which TransferOut and TransferIn are created.
+
+### Dependencies
+
+* Product Variant
+* Unit of Measure
+* Warehouse
+* Stock Ledger
+* Stock Ledger Allocation
+* Stock Balance
+* Approval
+
+### Flow
+
+#### Automatic Transfer
+
+1. Create a transfer with source and destination warehouses.
+2. Add one or more transfer items.
+3. Validate the requested stock availability.
+4. Create `TransferOut` Stock Ledger entries.
+5. Create FIFO allocations for the source inventory.
+6. Create `TransferIn` Stock Ledger entries at the destination.
+7. Update both Stock Balances.
+8. Mark the transfer as completed.
+
+#### Approval Required
+
+1. Create a transfer with source and destination warehouses.
+2. Add one or more transfer items.
+3. Validate the available stock.
+4. Increase `ReservedQuantity` for the requested stock.
+5. Keep the transfer pending for approval.
+6. If rejected, release the reservation.
+7. If approved, execute the transfer, create the ledger movements, and release the reservation atomically.
+8. Update the source and destination Stock Balances.
+9. Mark the transfer as completed.
+
+### Design Considerations
+
+* `StockBalance.Quantity` represents on-hand stock.
+* `StockBalance.ReservedQuantity` represents stock committed to pending transfers.
+* Available stock is calculated as `Quantity - ReservedQuantity`.
+* Reserved stock cannot be consumed by another inventory transaction.
+* Reservation is not a Stock Ledger movement because the stock has not physically moved.
+* There is no separate in-transit inventory state.
+* `TransferOut` reduces source stock and `TransferIn` increases destination stock.
+* FIFO allocations are created for the source warehouse's outbound movement.
+* The TransferIn movement preserves the FIFO cost composition consumed from the source warehouse.
+* The destination receives the transferred quantity in the specified UOM.
+* Source and destination inventory changes are performed atomically.
+* Stock availability and reservation must be handled atomically to prevent over-reservation.
+* A transfer cannot move stock between different UOM groups.
