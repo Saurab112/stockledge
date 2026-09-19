@@ -6,26 +6,27 @@ Accepted
 
 ## Context
 
-The system needs a costing method to calculate the cost of goods sold (COGS) and the value of remaining inventory.
+The system needs a costing method to calculate cost of goods sold (COGS) and the value of remaining inventory.
 
-Common inventory costing approaches include FIFO (First In, First Out), LIFO (Last In, First Out), and weighted average cost.
-
-FIFO was selected because it provides a clear cost-flow method for tracking inventory layers and is particularly suitable for inventory where older stock should generally be consumed before newer stock, such as products with expiry dates or a risk of becoming obsolete.
+FIFO was selected because it provides a clear and deterministic cost-flow method while preserving the cost history of incoming inventory.
 
 ## Decision
 
-Inventory will be costed using FIFO.
+Inventory will be costed using **FIFO (First In, First Out)**.
 
-Each incoming stock movement that adds costed inventory will create a FIFO cost layer containing:
+Each costed inbound Stock Ledger entry acts as a FIFO inventory layer and contains:
 
-* Quantity received
+* Original quantity
+* Base quantity
 * Unit cost
-* Remaining quantity
-* Reference to the originating stock movement
+* Remaining base quantity
+* Originating transaction reference
 
-When inventory is removed, the oldest available cost layer will be consumed first. If the requested quantity exceeds the remaining quantity of the oldest layer, the system will continue consuming subsequent layers until the entire quantity has been fulfilled.
+When inventory is consumed, the oldest eligible layer is consumed first.
 
-For example:
+If one layer is insufficient, subsequent layers are consumed until the required quantity is fulfilled.
+
+Example:
 
 ```text
 Layer 1: 100 units @ Rs. 100
@@ -37,25 +38,33 @@ Sale: 120 units
  20 units → Layer 2
 ```
 
-The cost of the sale is therefore calculated from the individual FIFO layers consumed rather than from a single average unit cost.
+The consumption of each layer is recorded through `StockLedgerAllocation`.
+
+FIFO calculations respect:
+
+```text
+ProductVariant + Warehouse + UOM
+```
+
+UOM conversion may be used to normalize quantities into the UOM Group's base UOM for layer calculations.
+
+`RemainingBaseQuantity` is mutable inventory-layer state, while the original Stock Ledger transaction facts remain immutable.
 
 ## Consequences
 
 ### Positive
 
-* Provides a deterministic method for calculating COGS.
-* Preserves the cost history of incoming inventory.
-* Supports inventory valuation based on the remaining cost layers.
-* Works naturally with the append-only stock ledger.
-* Handles inventory with different purchase costs without losing cost-layer information.
+* Deterministic COGS calculation.
+* Preserves incoming inventory cost history.
+* Supports remaining inventory valuation.
+* Works naturally with the Stock Ledger.
+* Provides traceability through Stock Ledger Allocation.
 
 ### Tradeoffs
 
-* A single stock removal may consume multiple cost layers.
-* Stock deduction logic is more complex than using a single average cost.
-* Cost layers must be tracked accurately as inventory is added and removed.
-* The system must handle partial consumption of a layer and continue to the next layer when necessary.
+* One stock-consuming transaction may consume multiple layers.
+* Partial layer consumption must be tracked.
+* FIFO calculations require careful UOM normalization.
+* Return operations must restore quantities to the appropriate original layers.
 
-FIFO costing depends on the stock ledger retaining the history of incoming inventory movements. Because the ledger is immutable, the system can reliably determine the order in which cost layers were created.
-
-The additional complexity is acceptable because accurate inventory costing and traceability are important requirements of the system.
+The additional complexity is acceptable because inventory costing and traceability are core requirements of StockLedger.

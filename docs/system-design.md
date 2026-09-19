@@ -8,7 +8,7 @@
 * Purchase
 * Stock Ledger
 * Stock Balance
-* Sale *(Needs further research)*
+* Sale 
 * Purchase Return
 * Sale Return
 * Stock Ledger Allocation
