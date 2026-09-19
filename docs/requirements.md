@@ -1,12 +1,11 @@
 # StockLedger — Requirements
 
-**Version:** 0.1 — Requirements & Domain Design
-**Status:** Living document — Phase 0 (Design)
+ Requirements & Domain Design
 **Scope:** Single-company, multi-warehouse inventory management system
 
-> A ledger-first inventory system — every stock change is an immutable event, not a mutable number.
+> A ledger-first inventory system where stock changes are recorded as immutable movements and current stock is derived from those movements.
 
-This document tracks confirmed decisions and open questions separately, so assumptions are never mistaken for requirements. 
+This document defines the confirmed system requirements. Detailed business rules and design decisions are documented separately.
 
 ---
 
@@ -14,196 +13,262 @@ This document tracks confirmed decisions and open questions separately, so assum
 
 StockLedger manages:
 
-- Products, categories, and product variants
-- Units of measure and conversions
-- Warehouse stock (multi-warehouse, single company)
-- Purchasing/receiving
-- Sales
-- Purchase returns 
-- Sale returns 
-- Stock transfers between warehouses
-- Stock adjustments
-- FIFO inventory costing
-- Approval workflows for sensitive operations
-- Full auditability and stock consistency
+* Products, categories, and product variants
+* Units of measure and UOM groups
+* Multi-warehouse inventory
+* Purchasing and sales
+* Purchase and sales returns
+* Stock transfers
+* Stock adjustments
+* FIFO inventory costing
+* Configurable approval workflows
+* Inventory traceability and auditability
 
-The goal is **correct and traceable inventory management**, not just CRUD.
+The goal is **correct, consistent, and traceable inventory management**, not just CRUD.
 
 ---
 
-## 2. Architecture 
+## 2. Architecture
 
-| Decision | Value |
-|---|---|
-| Deployment | Monolithic — single app, single primary database |
-| Modularity | One Inventory module, organized internally by feature (not separate services) |
-| Layering | API → Application → Domain ← Infrastructure |
-| Multi-tenancy | Out of scope |
+| Decision      | Value                                                |
+| ------------- | ---------------------------------------------------- |
+| Deployment    | Monolithic — single application and primary database |
+| Modularity    | One Inventory module organized by feature            |
+| Layering      | API → Application → Domain ← Infrastructure          |
+| Multi-tenancy | Out of scope                                         |
 
-Functional areas within the monolith: Products, Categories, Warehouses, Purchasing, Sales, Purchase Returns, Sale Returns, Stock Transfers, Stock Adjustments, Reporting.
+Functional areas include Products, Categories, Warehouses, Purchasing, Sales, Returns, Transfers, Adjustments, and Reporting.
 
 ---
 
-## 3. Company & Warehouse 
+## 3. Company & Warehouse
 
-- One company, multiple warehouses.
-- Stock is tracked **per warehouse** — quantity in Warehouse A has no relationship to quantity in Warehouse B.
-- Warehouse is the finest tracked location unit for v1 (no bin/shelf-level tracking).
+* The system supports one company with multiple warehouses.
+* Stock is tracked independently for each warehouse.
+* Warehouse is the smallest physical location tracked.
+* Bin, shelf, and other sub-location tracking are not supported.
 
 ---
 
 ## 4. Product Management
 
-### 4.1 Product 
+### 4.1 Products & Categories
 
+* Products are organized under categories.
+* A Product represents the common definition of an item.
+* Category hierarchy is not yet finalized.
 
-### 4.2 Categories —  Open
+### 4.2 Product Variants
 
-
-### 4.3 Product Variants —  Open (next design topic)
-
-Variants are supported (e.g. T-Shirt → Red/Small, Red/Medium). Not yet decided: fixed attribute columns vs. a dynamic attribute model. The stockable unit must remain unambiguous regardless of approach — this decision drives the core schema and blocks the ERD.
-
-
-## 5. Unit of Measure 
-- we will have the base UOM for each product, and allow conversion to other UOMs.
-- UOM conversion required (e.g. 1 Carton = 10 Boxes = 120 Pieces).
-- Products transact in different UOMs while maintaining a consistent base-UOM inventory quantity.
-- **Open:** 
-- everything is not decided yet .
-
+* A Product may have one or more Product Variants.
+* A Product Variant represents the stockable and sellable item.
+* Each Product Variant has a unique SKU.
+* A Product Variant is assigned a UOM Group.
+* Transactions use a UOM belonging to that UOM Group.
+* Dynamic product attribute models are out of scope for the current version.
 
 ---
 
-## 6. Inventory Tracking Model 
+## 5. Units of Measure
 
-**Decision: Immutable ledger + derived balance (Option C).** See ADR (to be written): *Inventory Ledger vs Balance Model*.
-
-### StockLedgerEntry (immutable, append-only) — source of truth
-
-
-
-### StockBalance (mutable, derived/projected) — read-optimized cache
-
-
-
-## 7. Negative Stock 
-
-Stock must never go negative. This is enforced **transactionally at the ledger-write boundary** (inside the same DB transaction that writes the ledger entry and updates the balance), not as a UI-level or pre-check validation — pre-checks fail under concurrent requests.
-
-**Open:** exact concurrency mechanism (optimistic `RowVersion` vs. pessimistic locking vs. serializable transaction isolation). This is the next major design topic after Product/Variant.
+* UOMs are organized into UOM Groups.
+* Each UOM Group has exactly one base UOM.
+* The base UOM has a multiplier of `1`.
+* Other UOMs define their multiplier relative to the base UOM.
+* UOM conversion is supported within the same UOM Group.
+* Different UOM Groups cannot be converted.
+* Stock is tracked separately for each Product Variant, Warehouse, and UOM.
+* The system does not automatically consume stock from another UOM.
 
 ---
 
-## 8. Purchasing / Receiving 
+## 6. Inventory Tracking Model
 
-- Flow: Supplier → Receive → Warehouse → stock increases.
-- Creates ledger IN-entries (FIFO layers) and batch/lot info where applicable.
-- **No approval required.**
+**Decision: Immutable Stock Ledger + Derived Stock Balance.**
 
-## 9. Sales 
+### Stock Ledger
 
-- Flow: Warehouse → Sale → stock decreases.
-- Consumes FIFO layers via ledger OUT-entries; enables cost-of-goods-sold calculation.
-- **No approval required.**
+* The Stock Ledger is the historical source of truth for inventory movements.
+* Ledger entries are append-only.
+* Original transaction facts cannot be modified or deleted.
+* Each stock-changing operation creates a ledger movement.
+* Inbound movements can act as FIFO inventory layers.
+* Outbound movements can be linked to consumed inbound layers through Stock Ledger Allocation.
 
-## 10. Purchase Returns
+### Stock Balance
 
-## 11. Sales Returns
-
-## 12. FIFO Costing 
-
-First-in-first-out via ledger IN-entries acting as cost layers. Supports inventory valuation, COGS and remaining inventory cost.
-
-## 13. Stock Transfer - Proposed, not locked
-
-- **Approval required.**
-- Three-phase stock movement — not a naive atomic move:
-  ```
-  Source Warehouse  -Qty
-        ↓
-  In-Transit         +Qty
-        ↓ (on receipt)
-  In-Transit         -Qty
-  Destination        +Qty
-  ```
-- Proposed lifecycle: `Draft → Submitted → Approved → Dispatched → In Transit → Received`. Cancellation/rejection states not yet finalized.
-
-## 14. Stock Adjustment —  Proposed, not locked
-
-- Used when physical count differs from system quantity.
-- Proposed: requires approval, lifecycle `Draft → Submitted → Approved → Applied`.
-- **Open:** confirm approval requirement formally.
-
-## 15. Approval  
-
-Not every operation needs approval — it's a control reserved for sensitive/high-risk operations, not a blanket workflow.
-
-| Operation | Approval |
-|---|---|
-| Purchase | ❌ No |
-| Sale | ❌ No |
-| Purchase Return | ❌ No |
-| Sale Return | ❌ No |
-| Stock Transfer | ✅ Yes |
-| Stock Adjustment |  Proposed (yes) |
-
-**Open:** actor/role model — who is permitted to approve. Blocks finalizing the approval workflow design.
-
-## 16. Stock Reservations — ❌ Out of scope (v1)
-
-Not implemented initially. Revisit if a Sales Order → Fulfillment workflow is introduced later.
+* Stock Balance represents current inventory state.
+* Stock is tracked by Product Variant, Warehouse, and UOM.
+* Stock Balance maintains on-hand and reserved quantities.
+* Stock Balance is derived and must remain consistent with the Stock Ledger.
 
 ---
 
-## 17. Explicitly Out of Scope (v1)
+## 7. Negative Stock
 
-- Multi-tenancy
-- Microservices
-- Serial number tracking
-- Stock reservations
-- Approval on every transaction
-- Bin/shelf-level location tracking
-- AI-based inventory features
-- Complex distributed architecture
+* Stock must never become negative.
+* Stock-consuming operations must have sufficient available stock.
+* Reserved stock cannot be consumed.
+* Stock validation and inventory updates must be handled atomically.
+* Concurrent operations must not bypass stock availability rules.
 
 ---
 
-## 18. Open Design Decisions — tracked as GitHub issues
+## 8. Purchasing
 
-| # | Decision | Status | Issue | ADR |
-|---|---|---|---|---|
-| 1 | Product/Variant data model | Next up | — | — |
-| 2 | Concurrency control mechanism | Not started | — | — |
-| 3 | Actor/role model (who can approve) | Not started | — | — |
-| 4 | Stock adjustment approval — confirm | Not started | — | — |
-| 5 | UOM change/conversion immutability rule | Leaning decided, not formalized | — | — |
-| 6 | Category hierarchy vs. flat | Not started | — | — |
-| 7 | StockBalance batch-level granularity | Not started | — | — |
+* Purchases record stock received from a Vendor into a Warehouse.
+* Purchase Items contain Product Variant, UOM, Quantity, and Unit Cost.
+* Confirmed purchases increase inventory.
+* Confirmed purchases create inbound Stock Ledger entries.
+* Received stock becomes FIFO inventory layers.
+* Purchase does not require approval.
+* Vendor payment and payable management are out of scope.
 
 ---
 
-## 19. Core Domain (conceptual, not final schema)
+## 9. Sales
 
-```
+* Sales record stock sold from a Warehouse.
+* Sale Items contain Product Variant, UOM, Quantity, and Unit Price.
+* Customer association is optional.
+* Confirmed sales decrease inventory.
+* Sales consume available stock using FIFO.
+* FIFO consumption is recorded through Stock Ledger Allocation.
+* Selling price is independent of FIFO inventory cost.
+* Sales do not require approval.
+
+---
+
+## 10. Returns
+
+### Purchase Returns
+
+* Return stock from the business to the Vendor.
+* Reference the original Purchase and relevant inventory layer.
+* Reduce the corresponding inventory and FIFO layer.
+
+### Sales Returns
+
+* Return stock from the Customer to the business.
+* Reference the original Sale.
+* Restore inventory against the original FIFO allocations.
+* Increase the corresponding inventory and FIFO layers.
+
+Both return types use the common Stock Ledger.
+
+---
+
+## 11. FIFO Costing
+
+* FIFO is used for inventory costing.
+* Inbound stock creates FIFO layers with an associated unit cost.
+* Outbound stock consumes the oldest eligible layers first.
+* A single outbound movement may consume multiple layers.
+* FIFO allocations are recorded for traceability.
+* FIFO costing supports inventory valuation and cost-of-goods-sold calculation.
+
+---
+
+## 12. Stock Transfers
+
+* Transfers move stock between two different warehouses.
+* A transfer contains one or more Transfer Items.
+* Transfers preserve Product Variant, UOM, and Quantity.
+* Transfers do not use an in-transit inventory state.
+* Automatic transfers execute the source and destination movements immediately.
+* Approval-required transfers reserve source stock until approval.
+* Transfer Out consumes source FIFO layers.
+* Transfer In creates corresponding destination inventory layers while preserving the transferred cost composition.
+* Transfer execution is atomic.
+
+---
+
+## 13. Stock Adjustments
+
+* Adjustments correct differences between physical and system stock.
+* Adjustments can increase or decrease inventory.
+* Positive adjustments require a Unit Cost and create a FIFO layer.
+* Negative adjustments consume existing FIFO layers.
+* Adjustments support configurable Direct or Approval Required workflows.
+* Pending adjustments do not change inventory.
+* Confirmed adjustments are applied atomically.
+
+---
+
+## 14. Approval Workflow
+
+Approval is configurable for supported operations.
+
+| Operation        | Approval     |
+| ---------------- | ------------ |
+| Purchase         | Direct       |
+| Sale             | Direct       |
+| Purchase Return  | Direct       |
+| Sales Return     | Direct       |
+| Stock Transfer   | Configurable |
+| Stock Adjustment | Configurable |
+
+* Supported operations can be configured for Direct or Approval Required processing.
+* Approval-required transactions remain pending until approved.
+* Approval does not bypass normal inventory validation.
+* Stock Transfers reserve stock while awaiting approval.
+* Stock Adjustments do not reserve stock while awaiting approval.
+* Rejected or cancelled pending transactions do not change inventory.
+
+---
+
+## 15. Auditability & Consistency
+
+* Every actual stock change must be traceable to its originating business transaction.
+* Stock Ledger entries preserve historical transaction facts.
+* Corrections use new inventory movements rather than modifying historical ledger entries.
+* Stock Ledger and Stock Balance changes must occur atomically.
+* Inventory state must be reconcilable against the Stock Ledger.
+* FIFO allocations provide traceability between outbound movements and inbound inventory layers.
+
+---
+
+## 16. Explicitly Out of Scope
+
+The current version does not support:
+
+* Multiple companies or multi-tenancy
+* Bin/shelf-level inventory
+* Negative inventory
+* Serial number tracking
+* Batch/lot tracking
+* Expiry-date tracking
+* In-transit inventory
+* Dynamic product attributes
+* Vendor/customer accounting balances
+* Payments and full accounting
+* Advanced pricing, discounts, promotions, and price lists
+* Microservices or distributed architecture
+
+---
+
+## 17. Core Domain
+
+```text
 Company
  │
  ├── Warehouse
  │
  ├── Product
- │     ├── Category
- │     ├── Variant
- │     └── UOM Group 
- │     └── UOM 
+ │    ├── Category
+ │    └── ProductVariant
+ │         └── UOM Group
+ │              └── UOM
  │
- ├── Purchase         → writes StockLedgerEntry (IN)
- ├── Sale             → writes StockLedgerEntry (OUT)
- ├── Purchase Return  → writes StockLedgerEntry (OUT)
- ├── Sale Return      → writes StockLedgerEntry (IN)
- ├── Stock Transfer   → writes StockLedgerEntry (OUT + IN, phased)
- ├── Stock Adjustment → writes StockLedgerEntry (IN/OUT)
+ ├── Purchase       → Stock Ledger (IN)
+ ├── Sale           → Stock Ledger (OUT)
+ ├── Purchase Return → Stock Ledger (OUT)
+ ├── Sales Return   → Stock Ledger (IN)
+ ├── Stock Transfer → Stock Ledger (OUT + IN)
+ ├── Stock Adjustment → Stock Ledger (IN/OUT)
  │
  └── Inventory
-       ├── StockLedgerEntry  (immutable, source of truth)
-       ├── StockBalance      (derived, cached)
+      ├── Stock Ledger
+      ├── Stock Ledger Allocation
+      └── Stock Balance
 ```

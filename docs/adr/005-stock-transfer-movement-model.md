@@ -8,45 +8,82 @@ Accepted
 
 A stock transfer moves inventory from one warehouse to another.
 
-The simplest approach is to decrease stock in the source warehouse and increase stock in the destination warehouse as a single operation. However, this does not accurately represent inventory while the goods are physically between warehouses.
+An earlier design considered an in-transit inventory state where stock would move from the source warehouse into an intermediate state before being received by the destination.
 
-Once stock has left the source warehouse, it may take time to arrive at the destination. During this period, the inventory should not be considered available at either warehouse. The system should also provide a clear point at which the destination can confirm what was actually received.
+This would introduce additional inventory state and workflow complexity that is not required by the current system.
+
+The system instead needs to support two operational modes:
+
+* Immediate transfers
+* Approval-required transfers
+
+Approval-required transfers also need to prevent the requested stock from being consumed by another operation while approval is pending.
 
 ## Decision
 
-A stock transfer will be modeled using three inventory stages:
+A Stock Transfer will use a **direct source-to-destination movement model** with configurable approval.
+
+### Automatic Transfer
+
+When configured for direct processing:
 
 ```text
 Source Warehouse
-       ↓
-   In Transit
-       ↓
+      ↓
+Transfer Out
+      ↓
+Transfer In
+      ↓
 Destination Warehouse
 ```
 
-When a transfer is dispatched, the transferred quantity is removed from the source warehouse and moved into an in-transit state.
+Both movements are created as part of the same atomic operation.
 
-When the destination warehouse confirms receipt, the quantity is removed from in-transit and added to the destination warehouse.
+### Approval Required Transfer
 
-The transfer must be approved before it can be dispatched.
+When approval is required:
 
-The exact transfer workflow and status transitions will be defined in the system's business rules.
+```text
+Create Transfer
+      ↓
+Reserve Source Stock
+      ↓
+Pending
+      ↓
+Approve
+      ↓
+Release Reservation
+      ↓
+Transfer Out + Transfer In
+      ↓
+Confirmed
+```
+
+While pending, the reserved stock remains physically in the source warehouse but is unavailable to other stock-consuming operations.
+
+If the transfer is rejected or cancelled, the reservation is released and no inventory movement is created.
+
+Transfer Out consumes source inventory using FIFO and creates Stock Ledger Allocations.
+
+Transfer In creates the corresponding destination inventory while preserving the cost composition of the transferred stock.
+
+There is no in-transit inventory state in the current version.
 
 ## Consequences
 
 ### Positive
 
-* The system can distinguish stock at the source, stock in transit, and stock received at the destination.
-* Stock that has left the source is not incorrectly shown as available there.
-* Stock that has not yet been received is not incorrectly shown as available at the destination.
-* The destination has an explicit receiving step, allowing the system to account for what was actually received.
-* Transfer history provides a clear record of the movement between warehouses.
+* Simpler transfer lifecycle.
+* No additional in-transit inventory state.
+* Supports both immediate and controlled transfers.
+* Reserved stock cannot be consumed while awaiting approval.
+* Source and destination changes remain atomic.
+* FIFO cost information can be preserved across warehouses.
 
 ### Tradeoffs
 
-* Transfers require more state and workflow management than a direct warehouse-to-warehouse update.
-* The system must handle transfers that remain in transit.
-* The receiving workflow must account for differences between dispatched and received quantities if partial receipt is supported.
-* Transfer operations require careful transaction handling to keep the source, in-transit, and destination quantities consistent.
+* Physical transportation time is not represented as an inventory state.
+* There is no separate destination receiving workflow.
+* Future requirements for shipment tracking or partial receiving may require a new transfer model.
 
-This additional complexity is acceptable because accurately representing inventory location is more important than making transfers appear as a single instantaneous operation.
+This tradeoff is acceptable because the current system focuses on inventory movement rather than logistics or shipment management.

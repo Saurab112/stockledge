@@ -6,60 +6,64 @@ Accepted
 
 ## Context
 
-The system needs two things that pull in different directions: a complete history of every stock movement, which is required for traceability and FIFO costing, and a fast way to determine the current stock quantity for a product in a warehouse.
+The system needs both a complete history of stock movements and an efficient way to determine current available stock.
 
-Three approaches were considered.
+A ledger provides historical traceability and supports FIFO costing, while calculating current stock entirely from the ledger would make frequent stock checks more expensive.
 
-### Option 1: Ledger Only
-
-Store every stock movement in a ledger and calculate the current quantity by aggregating ledger entries whenever stock is queried.
-
-This provides complete history but makes frequent stock checks more expensive. It also makes current-stock validation at write time more complex because the available quantity must be calculated from the ledger.
-
-### Option 2: Balance Only
-
-Maintain only the current stock quantity.
-
-This provides fast reads but loses the history of how the quantity was produced. It also cannot represent the individual incoming stock layers required for FIFO costing.
-
-This option was rejected.
-
-### Option 3: Ledger + Balance
-
-Maintain an append-only stock ledger as the source of truth and a separate stock balance as a derived representation of the current quantity.
-
-The balance is updated together with the ledger within the same database transaction.
-
-This option was chosen.
+A balance provides fast reads but cannot replace the historical movement information required for auditability and FIFO costing.
 
 ## Decision
 
-Every stock-changing operation will create one or more entries in an append-only stock ledger.
+The system will use an **append-only Stock Ledger as the historical source of truth** and a **Stock Balance as the derived current-state representation**.
 
-Ledger entries are immutable: they are not updated or deleted after being recorded. Corrections must be represented through new compensating stock movements rather than modifying historical entries.
+Every stock-changing operation creates one or more Stock Ledger entries.
 
-A separate stock balance will maintain the current quantity for each relevant product and warehouse combination. The balance is a derived representation of the ledger, not an independent source of truth.
+Ledger transaction facts are immutable. Corrections must be represented through new inventory movements rather than modifying historical entries.
 
-Stock-changing operations must update both the ledger and balance within the same database transaction so that a successful operation cannot persist one without the other.
+Stock Balance maintains current inventory for:
 
-The balance must be recoverable by recalculating the relevant movements from the ledger.
+```text
+ProductVariant + Warehouse + UOM
+```
+
+Stock Balance contains:
+
+```text
+Quantity
+ReservedQuantity
+```
+
+where:
+
+```text
+AvailableQuantity = Quantity - ReservedQuantity
+```
+
+`ReservedQuantity` represents stock committed to a pending operation but not yet physically moved.
+
+FIFO inventory layers are represented through inbound Stock Ledger entries using `RemainingBaseQuantity` as mutable inventory-layer state.
+
+Stock Ledger and Stock Balance changes must be performed within the same database transaction.
+
+The Stock Balance must be recoverable or reconcilable from the Stock Ledger.
 
 ## Consequences
 
 ### Positive
 
 * Complete and auditable history of stock movements.
-* FIFO costing can use incoming ledger entries as individual cost layers.
-* Current stock can be read efficiently without aggregating the entire ledger.
-* Stock validation can use the current balance during stock-changing operations.
-* Historical inventory movements remain immutable and traceable.
-* The balance can be reconstructed from the ledger if required.
+* Efficient current-stock reads.
+* Supports FIFO inventory layers.
+* Supports stock reservations without treating reservations as physical movements.
+* Historical transaction facts remain immutable.
+* Stock Balance can be reconciled against the ledger.
 
 ### Tradeoffs
 
-* Every stock-changing operation must write to both the ledger and the balance.
-* Transaction boundaries become important because both representations must remain consistent.
-* The system needs a reconciliation mechanism to detect or correct any unexpected drift between the ledger and balance.
-* The balance introduces additional data that must be maintained correctly.
+* Stock-changing operations must maintain both ledger and balance.
+* Transaction boundaries are critical for consistency.
+* Reservations add additional state to Stock Balance.
+* FIFO layers require mutable `RemainingBaseQuantity`.
+* A reconciliation mechanism is needed to detect unexpected differences.
 
-The additional complexity is acceptable because inventory correctness, traceability, and efficient stock reads are more important for this system than minimizing the number of database writes.
+The additional complexity is acceptable because inventory correctness, traceability, FIFO costing, and efficient stock availability checks are core requirements.
