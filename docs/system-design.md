@@ -1,41 +1,20 @@
-Template
-
-## Feature / Area
-
-### What
-What is this responsible for?
-
-### How
-How will it work architecturally?
-
-### Flow
-What are the important steps?
-
-### Dependencies
-What modules/components/systems does it interact with?
-
-### Design Considerations
-Transactions, concurrency, security, performance,
-or other important considerations.
 
 ### Features List
-## Feature: Product Category, Product and Product Variant
-## Feature: Unit of Measure Group and Unit of Measure
-## Feature: Vendor Group and Vendor
-## Feature: Warehouse
-## Feature: Purchase
-## Feature: Stock Ledger
-## Feature: Stock Balance
-## Feature: Sale (need to more research on this)
-## Feature: Purchase Return
-## Feature: Sale Return
-## Feature: Stock Ledger Allocation
-## Feature: Stock Transfer
-## Feature: Stock Adjustment
 
-### Remaining features to be added:
+* Product Category, Product, and Product Variant
+* Unit of Measure Group and Unit of Measure
+* Vendor Group and Vendor
+* Warehouse
+* Purchase
+* Stock Ledger
+* Stock Balance
+* Sale *(Needs further research)*
+* Purchase Return
+* Sale Return
+* Stock Ledger Allocation
+* Stock Transfer
+* Stock Adjustment
 
-## Feature: Customer (we can include for the Sale feature)
 
 ## Feature: Product Category, Product and Product Variant
 
