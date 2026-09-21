@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="src/StockLedge.Api/StockLedge.Api.csproj" Id="2afb835a-7d3f-44ae-9578-5c945c98c803" />
+  <Project Path="src/StockLedge.Core/StockLedge.Core.csproj" Id="1728bf1e-47d0-4293-982a-141550fe86ce" />
+  <Project Path="src/StockLedge.Data/StockLedge.Data.csproj" Id="72f4cf5d-46ae-452f-bb26-580a0cdd4889" />
+  <Project Path="src/StockLedge.Features/StockLedge.Features.csproj" Id="1620a96e-ec6f-4a61-9d4d-36b3dc445c43" />
+</Solution>

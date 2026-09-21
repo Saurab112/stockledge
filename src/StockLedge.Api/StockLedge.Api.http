@@ -1,0 +1,6 @@
+@StockLedge.Api_HostAddress = http://localhost:5258
+
+GET {{StockLedge.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
