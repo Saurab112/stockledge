@@ -56,21 +56,21 @@ Stock Balance              Stock Balance
 
 ## Architecture
 
-Modular monolith, layered: **API → Application → Domain → Infrastructure**. Kept intentionally as a monolith — the project doesn't need the operational cost of distributed services (see [ADR-001](./adr/001-monolithic-layered-architecture.md)).
+Modular monolith, layered: **API → Application → Domain → Infrastructure**. Kept intentionally as a monolith — the project doesn't need the operational cost of distributed services (see [ADR-001](./docs/adr/001-monolithic-layered-architecture.md)).
 
 ## Design highlights
 
-**Ledger-first inventory.** Every stock-changing operation creates an immutable ledger movement. Nothing historical is edited — corrections are new movements. → [ADR-003](./adr/003-stock-ledger-source-of-truth.md)
+**Ledger-first inventory.** Every stock-changing operation creates an immutable ledger movement. Nothing historical is edited — corrections are new movements. → [ADR-003](./docs/adr/%20003-stock-ledger-as-source-of-truth.md)
 
-**FIFO costing.** Inbound stock creates cost layers; outbound stock consumes the oldest eligible layer first, possibly spanning several layers. `StockLedgerAllocation` records exactly which inbound layers fed each outbound movement. → [ADR-004](./adr/004-fifo-costing.md)
+**FIFO costing.** Inbound stock creates cost layers; outbound stock consumes the oldest eligible layer first, possibly spanning several layers. `StockLedgerAllocation` records exactly which inbound layers fed each outbound movement. → [ADR-004](./docs/adr/%20004-fifo-costing.md)
 
-**UOM-aware inventory.** The same variant can hold separate balances per unit (e.g. `Frooti / Warehouse A` tracks `Box → 10` and `Piece → 100` independently) — a transaction in one UOM never silently draws from another. → [ADR-007](./adr/007-uom-aware-inventory-identity.md)
+**UOM-aware inventory.** The same variant can hold separate balances per unit (e.g. `Frooti / Warehouse A` tracks `Box → 10` and `Piece → 100` independently) — a transaction in one UOM never silently draws from another. → [ADR-007](./docs/adr/007-uom-aware-inventory-identity.md)
 
-**Configurable approvals.** Transfers and adjustments can run Direct or Approval Required. Pending transfers reserve source stock without moving it; approval revalidates before the movement is applied — same inventory rules either way. → [ADR-008](./adr/008-configurable-approval-workflow.md)
+**Configurable approvals.** Transfers and adjustments can run Direct or Approval Required. Pending transfers reserve source stock without moving it; approval revalidates before the movement is applied — same inventory rules either way. → [ADR-008](./docs/adr/008-configurable-approval-workflow.md)
 
-**Traceable returns.** Sales Returns restore the original FIFO allocations in reverse allocation order, preserving the exact cost relationship between the sale and the layers it consumed. → [ADR-009](./adr/009-reverse-order-allocation-restoration.md)
+**Traceable returns.** Sales Returns restore the original FIFO allocations in reverse allocation order, preserving the exact cost relationship between the sale and the layers it consumed. → [ADR-009](./docs/adr/009-reverse-order-allocation-restoration.md)
 
-**Product/Variant modeling.** Variants carry name + SKU rather than structured color/size attributes — a deliberate simplicity trade-off over a generic attribute model. → [ADR-006](./adr/006-product-variant-modeling.md)
+**Product/Variant modeling.** Variants carry name + SKU rather than structured color/size attributes — a deliberate simplicity trade-off over a generic attribute model. → [ADR-006](./docs/adr/006-product-and-product-variant-modeling.md)
 
 ## Documentation
 
