@@ -11,6 +11,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\StockLedge.Data\StockLedge.Data.csproj" />
     <ProjectReference Include="..\StockLedge.Features\StockLedge.Features.csproj" />
   </ItemGroup>
 
