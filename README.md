@@ -79,7 +79,7 @@ Modular monolith, layered: **API → Application → Domain → Infrastructure**
 | [`docs/requirements.md`](./docs/requirements.md) | System scope, architecture, domain model |
 | [`docs/business-rules.md`](./docs/business-rules.md) | The formal, enforceable rule set |
 | [`docs/system-design.md`](./docs/system-design.md) | Feature-by-feature rationale and workflow |
-| [`adr/`](./adr) | All 9 decisions, including the alternatives that were rejected |
+| [`docs/adr/`](./docs/adr) | All 9 decisions, including the alternatives that were rejected |
 
 ## Explicitly out of scope
 
