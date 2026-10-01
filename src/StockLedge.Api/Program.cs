@@ -6,7 +6,9 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.DbContextDiConfig(builder.Configuration);
 builder.Services.AddRepositoriesDiConfig();
 
+
 builder.Services.AddControllers();
+
 
 builder.Services.AddOpenApi();
 
