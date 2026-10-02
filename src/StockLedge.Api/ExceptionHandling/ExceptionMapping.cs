@@ -1,30 +1,38 @@
-﻿using FluentValidation;
+﻿using Microsoft.EntityFrameworkCore;
 using StockLedge.Application.Exceptions;
 using StockLedge.Domain.Exceptions;
 
 namespace StockLedge.Api.ExceptionHandling
 {
+	public sealed record ProblemMapping(int StatusCode, string Title, string TypeUri);
+
 	public static class ExceptionMapping
 	{
-		public static int GetStatusCode(Exception exception)
+		private const string ProblemBaseUri = "https://stockledge.dev/problems";
+		public static ProblemMapping Resolve(Exception exception) => exception switch
 		{
-			return exception switch
-			{
-				ValidationException =>
-					StatusCodes.Status400BadRequest,
+			AppValidationException =>
+				new ProblemMapping(StatusCodes.Status400BadRequest, "Validation failed", $"{ProblemBaseUri}/validation-failed"),
 
-				NotFoundException =>
-					StatusCodes.Status404NotFound,
+			NotFoundException =>
+				new ProblemMapping(StatusCodes.Status404NotFound, "Resource not found", $"{ProblemBaseUri}/not-found"),
 
-				InsufficientStockException =>
-					StatusCodes.Status409Conflict,
+			ConflictException =>
+				new ProblemMapping(StatusCodes.Status409Conflict, "Conflict", $"{ProblemBaseUri}/conflict"),
 
-				ConflictException =>
-					StatusCodes.Status409Conflict,
+			DbUpdateConcurrencyException =>
+				new ProblemMapping(StatusCodes.Status409Conflict, "Concurrent update detected", $"{ProblemBaseUri}/concurrency-conflict"),
 
-				_ =>
-					StatusCodes.Status500InternalServerError
-			};
-		}
+			InsufficientStockException =>
+				new ProblemMapping(StatusCodes.Status422UnprocessableEntity, "Insufficient stock", $"{ProblemBaseUri}/insufficient-stock"),
+
+			// Catch-all for any other domain rule violation not mapped above.
+			DomainException =>
+				new ProblemMapping(StatusCodes.Status422UnprocessableEntity, "Business rule violated", $"{ProblemBaseUri}/business-rule-violation"),
+
+			// Fallback: anything unexpected becomes a generic 500.
+			_ =>
+				new ProblemMapping(StatusCodes.Status500InternalServerError, "An unexpected error occurred", $"{ProblemBaseUri}/server-error")
+		};
 	}
 }

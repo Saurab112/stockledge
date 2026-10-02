@@ -1,10 +1,12 @@
 ﻿using FluentValidation;
 using MediatR;
+using StockLedge.Application.Exceptions;
 
 namespace StockLedge.Application.Behaviors
 {
-	public class ValidationBehavior<TRequest, TResponse> 
+	public sealed class ValidationBehavior<TRequest, TResponse> 
 		: IPipelineBehavior<TRequest, TResponse>
+		where TRequest : notnull
 	{
 		private readonly IEnumerable<IValidator<TRequest>> _validators;
 
@@ -20,19 +22,25 @@ namespace StockLedge.Application.Behaviors
 				return await next();
 			}
 
-			var results = await Task.WhenAll(
-			_validators.Select(
-				validator => validator.ValidateAsync(
-					request,
-					cancellationToken)));
+			var context = new ValidationContext<TRequest>(request);
 
-			var failures = results
-				.SelectMany(x => x.Errors)
+			var validationResults = await Task.WhenAll(
+				_validators.Select(v => v.ValidateAsync(context, cancellationToken)));
+
+			var failures = validationResults
+				.SelectMany(result => result.Errors)
+				.Where(failure => failure is not null)
 				.ToList();
 
-			if (failures.Any())
+			if (failures.Count != 0)
 			{
-				throw new ValidationException(failures);
+				var errors = failures
+					.GroupBy(f => f.PropertyName)
+					.ToDictionary(
+						group => group.Key,
+						group => group.Select(f => f.ErrorMessage).ToArray());
+
+				throw new AppValidationException(errors);
 			}
 
 			return await next();

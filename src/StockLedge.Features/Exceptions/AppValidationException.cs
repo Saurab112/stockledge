@@ -5,10 +5,14 @@ using System.Text;
 
 namespace StockLedge.Application.Exceptions
 {
-	public class AppValidationException : BaseException
+	public sealed class AppValidationException : BaseException
 	{
-		public AppValidationException(string message) : base(message)
+		public IDictionary<string, string[]> Errors { get; }
+
+		public AppValidationException(IDictionary<string, string[]> errors)
+			: base("One or more validation errors occurred.")
 		{
+			Errors = errors;
 		}
 	}
 }
