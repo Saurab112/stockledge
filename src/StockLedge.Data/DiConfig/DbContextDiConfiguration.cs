@@ -12,9 +12,8 @@ namespace StockLedge.Data.DiConfig
 			var connectionString = configuration.GetConnectionString("DefaultConnection");
 
 			services.AddDbContext<StockLedgeDbContext>(options =>
-			options.UseMySql(
+			options.UseSqlServer(
 				connectionString,
-				ServerVersion.AutoDetect(connectionString),
 				b => b.MigrationsAssembly(typeof(StockLedgeDbContext).Assembly.FullName)
 			));
 			return services;
